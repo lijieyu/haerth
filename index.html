@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="haerth.cn - 个人兴趣项目的聚合站点，探索技术与创意的乐趣。">
+    <title>haerth.cn - 探索与创造</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="blob-bg">
+        <div class="blob shape-1"></div>
+        <div class="blob shape-2"></div>
+        <div class="blob shape-3"></div>
+    </div>
+
+    <main class="container">
+        <header class="hero">
+            <h1 id="main-heading" class="title">haerth.cn</h1>
+            <p class="subtitle">技术、创意与生活的数字工坊。欢迎来到我的个人站，以下是近期处于活跃状态的三个子项目。</p>
+        </header>
+
+        <section class="projects-grid">
+            <!-- Project 1: Everbond -->
+            <a href="https://everbond.haerth.cn" id="proj-everbond" class="project-card everbond-card">
+                <div class="card-glow"></div>
+                <div class="card-content">
+                    <div class="project-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>
+                    </div>
+                    <h2 class="project-title">久念 App (后端)</h2>
+                    <p class="project-desc">提供 API 给久念 App 使用的底层后端服务，承载高可用交互与功能逻辑。</p>
+                    <span class="project-domain">everbond.haerth.cn</span>
+                </div>
+            </a>
+
+            <!-- Project 2: Portfolio Advisor -->
+            <a href="https://portfolio.haerth.cn" id="proj-portfolio" class="project-card portfolio-card">
+                <div class="card-glow"></div>
+                <div class="card-content">
+                    <div class="project-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                    </div>
+                    <h2 class="project-title">个人投资组合分享</h2>
+                    <p class="project-desc">量化与直觉的碰撞。整理和分享个人在投资路上的思考、组合配置与成长记录。</p>
+                    <span class="project-domain">portfolio.haerth.cn</span>
+                </div>
+            </a>
+
+            <!-- Project 3: Minecraft Racing -->
+            <a href="https://game.haerth.cn" id="proj-game" class="project-card game-card">
+                <div class="card-glow"></div>
+                <div class="card-content">
+                    <div class="project-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2 8 4-16 4 16 2-8h4"/></svg>
+                    </div>
+                    <h2 class="project-title">我的世界风格：赛车游戏</h2>
+                    <p class="project-desc">为孩子准备的礼物。像素风的轻松赛车小游戏，体验纯粹的驾驶乐趣。</p>
+                    <span class="project-domain">game.haerth.cn/mc-racing/</span>
+                </div>
+            </a>
+        </section>
+
+        <footer class="footer">
+            <p>&copy; <script>document.write(new Date().getFullYear())</script> haerth.cn. 探索未止.</p>
+        </footer>
+    </main>
+
+    <script>
+        // Simple glow effect tracking mouse movement on cards
+        document.querySelectorAll('.project-card').forEach(card => {
+            card.addEventListener('mousemove', e => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                card.style.setProperty('--mouse-x', `${x}px`);
+                card.style.setProperty('--mouse-y', `${y}px`);
+            });
+        });
+    </script>
+</body>
+</html>

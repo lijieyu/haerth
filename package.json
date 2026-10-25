@@ -1,0 +1,14 @@
+{
+  "name": "haerth",
+  "private": true,
+  "description": "Haerth personal site — ECS (haerth.cn) + Cloudflare Workers (haerth.org)",
+  "scripts": {
+    "sync:public": "bash scripts/sync-public.sh",
+    "deploy": "bash deploy.sh",
+    "deploy:cn": "bash deploy.sh cn",
+    "deploy:org": "bash deploy.sh org"
+  },
+  "devDependencies": {
+    "wrangler": "^4.45.0"
+  }
+}

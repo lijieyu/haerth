@@ -46,8 +46,9 @@ deploy() {
     systemctl reload nginx\
   "
 
-  log "Deployment complete"
-  log "HTTP URL: http://haerth.cn"
+  log "Deployment complete (haerth.cn / ECS)"
+  log "HTTPS URL: https://haerth.cn"
+  log "For haerth.org (Cloudflare Workers): npm run deploy:org"
 }
 
 deploy

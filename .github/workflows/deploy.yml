@@ -1,0 +1,66 @@
+# Deploy haerth.cn (Aliyun ECS) + haerth.org (Cloudflare Workers) from main.
+# Soft-skips a target when its secrets are missing (see README).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Deploy target"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - cn
+          - org
+
+concurrency:
+  group: deploy-haerth-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy (${{ github.event.inputs.target || 'all' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy
+        env:
+          # CN — Aliyun ECS (SSH + rsync). Leave unset to skip cn.
+          HAERTH_SSH_PRIVATE_KEY: ${{ secrets.HAERTH_SSH_PRIVATE_KEY }}
+          HAERTH_SSH_HOST: ${{ secrets.HAERTH_SSH_HOST }}
+          HAERTH_SSH_USER: ${{ secrets.HAERTH_SSH_USER }}
+          # ORG — Cloudflare Workers. Leave unset to skip org.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          TARGET="${{ github.event.inputs.target || 'all' }}"
+
+          # Empty optional secrets become "" — normalize so deploy.sh defaults apply.
+          if [ -z "${HAERTH_SSH_HOST:-}" ]; then unset HAERTH_SSH_HOST; fi
+          if [ -z "${HAERTH_SSH_USER:-}" ]; then unset HAERTH_SSH_USER; fi
+          if [ -z "${HAERTH_SSH_PRIVATE_KEY:-}" ]; then unset HAERTH_SSH_PRIVATE_KEY; fi
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then unset CLOUDFLARE_API_TOKEN; fi
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then unset CLOUDFLARE_ACCOUNT_ID; fi
+
+          echo "Deploy target: ${TARGET}"
+          ./deploy.sh "${TARGET}"

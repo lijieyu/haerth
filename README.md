@@ -2,63 +2,62 @@
 
 Personal site for **haerth.cn** (Aliyun ECS + nginx) and **haerth.org** (Cloudflare Workers Static Assets).
 
+## One command (both domains)
+
+```bash
+npm install          # once — provides wrangler
+./deploy.sh          # or: npm run deploy
+```
+
+That syncs `index.html` / `styles.css` / `assets/` → `public/`, then publishes the **same** `public/` tree to:
+
+| Target | Platform | Needs |
+|--------|----------|--------|
+| **cn** | Aliyun ECS `root@123.56.247.129` (rsync + nginx) | SSH private key (BatchMode) |
+| **org** | Cloudflare Worker `haerth` | `CLOUDFLARE_API_TOKEN` or `npx wrangler login` |
+
+Missing credentials soft-skip that side and print what to fix; hard-fail only if a chosen target errors or nothing can run.
+
+```bash
+./deploy.sh cn    # ECS only
+./deploy.sh org   # Workers only
+npm run deploy:cn
+npm run deploy:org
+```
+
+### Credentials
+
+- **CN:** SSH key for `root@123.56.247.129` (e.g. `ssh-add ~/.ssh/<ecs-key>`).
+- **ORG:** API token with Workers Scripts Edit (and zone DNS if recreating Custom Domains), exported as `CLOUDFLARE_API_TOKEN`, **or** interactive `npx wrangler login`.
+
 ## Files
 
 - `index.html` / `styles.css` / `assets/` — site content (source of truth)
-- `public/` — generated copy for Cloudflare Workers (`npm run sync:public`)
+- `public/` — shared publish payload (`scripts/sync-public.sh`); both ECS and Workers deploy from here
 - `nginx.haerth.conf` — ECS nginx for `haerth.cn` (+ local tunnel fallback for org)
-- `deploy.sh` — rsync site + nginx to ECS
+- `deploy.sh` — unified deploy (cn and/or org)
 - `wrangler.jsonc` — Workers Static Assets for `haerth.org` / `www.haerth.org`
 
-## Deploy haerth.cn (ECS)
+## Platform details
 
-```bash
-./deploy.sh
-# or: npm run deploy:cn
-```
-
-Requires SSH to `root@123.56.247.129`.
+### haerth.cn (ECS)
 
 | Item | Value |
 |------|--------|
-| Static files | `/var/www/haerth-web` |
+| Static files | `/var/www/haerth-web` (contents of `public/`) |
 | Nginx site | `/etc/nginx/sites-available/haerth` |
 | Public DNS | Aliyun (`dns25/26.hichina.com`) → `123.56.247.129` |
 | TLS | Let's Encrypt (`haerth.cn` / `www.haerth.cn`) |
 
-No Cloudflare secrets are used for the CN path.
+### haerth.org (Workers)
 
-## Deploy haerth.org (Cloudflare Workers)
-
-```bash
-npm install
-npm run deploy:org
-```
-
-Uses Wrangler + `CLOUDFLARE_API_TOKEN` (or `wrangler login`). Account: Jieyu's Cloudflare account; Worker name: `haerth`.
-
-`wrangler.jsonc` attaches Custom Domains:
+Worker name: `haerth`. Custom Domains (in `wrangler.jsonc`):
 
 - `haerth.org`
 - `www.haerth.org`
 
-Wrangler creates/updates the DNS records for those Custom Domains. **Do not** keep a proxied CNAME from `haerth.org` to the Cloudflare Tunnel when using Custom Domains — delete that tunnel CNAME first (or let Wrangler fail and remove it), otherwise Custom Domain attach is rejected.
-
-### One-time Cloudflare checklist (Jieyu)
-
-1. Ensure zone `haerth.org` is active on Cloudflare (already done).
-2. Delete DNS record: `haerth.org` CNAME → `*.cfargotunnel.com` (blocks Custom Domains).
-3. Leave subdomain tunnel CNAMEs alone (`game`, `everbond`, `skills`, etc.).
-4. Run `npm run deploy:org` (or merge this PR and deploy from CI/local).
-5. Confirm `https://haerth.org` and `https://www.haerth.org` return the site (not 502).
-6. Optional: remove the `haerth.org` ingress from the local `cloudflared` config on the ECS so the tunnel only serves subdomains.
+Do **not** keep a proxied CNAME from `haerth.org` to the Cloudflare Tunnel when using Custom Domains — that record blocks attach.
 
 ### Why org was 502 before
 
-Apex `haerth.org` pointed at Cloudflare Tunnel `haerth` → `http://127.0.0.1:80`, but nginx only served `haerth.cn` on the public NIC. Requests to `127.0.0.1` hit the default server (`444`), which Cloudflare surfaces as **502**.
-
-## Dual deploy
-
-```bash
-npm run deploy   # ECS then Workers
-```
+The Tunnel was up. Apex `haerth.org` CNAME → tunnel → `http://127.0.0.1:80`, but nginx only served `haerth.cn` on the public NIC. Localhost hit the default server (`return 444`), which Cloudflare surfaces as **502**.

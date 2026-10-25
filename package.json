@@ -4,9 +4,9 @@
   "description": "Haerth personal site — ECS (haerth.cn) + Cloudflare Workers (haerth.org)",
   "scripts": {
     "sync:public": "bash scripts/sync-public.sh",
-    "deploy:cn": "bash deploy.sh",
-    "deploy:org": "bash scripts/sync-public.sh && wrangler deploy",
-    "deploy": "npm run deploy:cn && npm run deploy:org"
+    "deploy": "bash deploy.sh",
+    "deploy:cn": "bash deploy.sh cn",
+    "deploy:org": "bash deploy.sh org"
   },
   "devDependencies": {
     "wrangler": "^4.45.0"

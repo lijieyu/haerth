@@ -2,41 +2,48 @@
 
 Personal site for **haerth.cn** (Aliyun ECS + nginx) and **haerth.org** (Cloudflare Workers Static Assets).
 
-## One command (both domains)
+## Deploy (recommended: GitHub Actions)
+
+Push or merge to **`main`** runs [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). You can also run it manually (**Actions → Deploy → Run workflow**) with target `all` / `cn` / `org`.
+
+`./deploy.sh` publishes the same `public/` tree to both sides. A target is **soft-skipped** when its secrets are missing (job still succeeds if the other side deploys). Hard-fail only if a chosen target errors or nothing can run.
+
+### One-time GitHub secrets
+
+Repo → **Settings → Secrets and variables → Actions → New repository secret**.
+
+| Secret name | Required for | What to paste |
+|-------------|--------------|---------------|
+| `HAERTH_SSH_PRIVATE_KEY` | **cn** | Full PEM private key that can SSH as the ECS deploy user (include `-----BEGIN…` / `-----END…` lines) |
+| `HAERTH_SSH_HOST` | cn (optional) | ECS host, default `123.56.247.129` if unset |
+| `HAERTH_SSH_USER` | cn (optional) | SSH user, default `root` if unset |
+| `CLOUDFLARE_API_TOKEN` | **org** | [API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) with **Workers Scripts Edit** (add zone DNS edit if you recreate Custom Domains) |
+| `CLOUDFLARE_ACCOUNT_ID` | org (optional) | Cloudflare account id (helps non-interactive Wrangler) |
+
+Do **not** commit real keys. After secrets are set, the next push to `main` (or a manual workflow run) deploys automatically — no laptop `./deploy.sh` required.
+
+### Local / manual (optional)
 
 ```bash
-npm install          # once — provides wrangler
+npm install
 ./deploy.sh          # or: npm run deploy
+./deploy.sh cn       # ECS only
+./deploy.sh org      # Workers only
 ```
-
-That syncs `index.html` / `styles.css` / `assets/` → `public/`, then publishes the **same** `public/` tree to:
 
 | Target | Platform | Needs |
 |--------|----------|--------|
-| **cn** | Aliyun ECS `root@123.56.247.129` (rsync + nginx) | SSH private key (BatchMode) |
+| **cn** | Aliyun ECS (rsync + nginx) | `HAERTH_SSH_PRIVATE_KEY` or a local ssh-agent key |
 | **org** | Cloudflare Worker `haerth` | `CLOUDFLARE_API_TOKEN` or `npx wrangler login` |
-
-Missing credentials soft-skip that side and print what to fix; hard-fail only if a chosen target errors or nothing can run.
-
-```bash
-./deploy.sh cn    # ECS only
-./deploy.sh org   # Workers only
-npm run deploy:cn
-npm run deploy:org
-```
-
-### Credentials
-
-- **CN:** SSH key for `root@123.56.247.129` (e.g. `ssh-add ~/.ssh/<ecs-key>`).
-- **ORG:** API token with Workers Scripts Edit (and zone DNS if recreating Custom Domains), exported as `CLOUDFLARE_API_TOKEN`, **or** interactive `npx wrangler login`.
 
 ## Files
 
 - `index.html` / `styles.css` / `assets/` — site content (source of truth)
 - `public/` — shared publish payload (`scripts/sync-public.sh`); both ECS and Workers deploy from here
 - `nginx.haerth.conf` — ECS nginx for `haerth.cn` (+ local tunnel fallback for org)
-- `deploy.sh` — unified deploy (cn and/or org)
+- `deploy.sh` — unified deploy (cn and/or org); CI-friendly via env secrets
 - `wrangler.jsonc` — Workers Static Assets for `haerth.org` / `www.haerth.org`
+- `.github/workflows/deploy.yml` — auto-deploy on `main`
 
 ## Platform details
 

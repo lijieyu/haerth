@@ -9,12 +9,17 @@
 #   ./deploy.sh org
 #   npm run deploy        # same as ./deploy.sh
 #
-# Credentials:
-#   CN  — SSH key that can log in as root@123.56.247.129 (BatchMode)
-#   ORG — CLOUDFLARE_API_TOKEN (Workers Scripts Edit) or `wrangler login`
+# Credentials (local or CI):
+#   CN  — SSH BatchMode access. Either:
+#           • default agent key / ~/.ssh that can reach the host, or
+#           • HAERTH_SSH_PRIVATE_KEY (+ optional HAERTH_SSH_HOST / HAERTH_SSH_USER)
+#   ORG — CLOUDFLARE_API_TOKEN (Workers Edit; optional CLOUDFLARE_ACCOUNT_ID)
+#         or interactive `wrangler login` locally
 set -euo pipefail
 
-REMOTE_HOST="root@123.56.247.129"
+HAERTH_SSH_HOST="${HAERTH_SSH_HOST:-123.56.247.129}"
+HAERTH_SSH_USER="${HAERTH_SSH_USER:-root}"
+REMOTE_HOST="${HAERTH_SSH_USER}@${HAERTH_SSH_HOST}"
 REMOTE_DIR="/var/www/haerth-web"
 NGINX_SITE_PATH="/etc/nginx/sites-available/haerth"
 NGINX_BACKUP_DIR="/etc/nginx/site-backups"
@@ -22,16 +27,68 @@ PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PUBLIC_DIR="${PROJECT_DIR}/public"
 TARGET="${1:-all}"
 
+SSH_IDENTITY_FILE=""
+SSH_BASE_OPTS=(
+  -o BatchMode=yes
+  -o ConnectTimeout=15
+  -o StrictHostKeyChecking=accept-new
+  -o UserKnownHostsFile=/dev/null
+  -o LogLevel=ERROR
+)
+
 log() { echo -e "\n==> $*"; }
 warn() { echo -e "\n!!  $*" >&2; }
+
+cleanup() {
+  if [[ -n "${SSH_IDENTITY_FILE}" && -f "${SSH_IDENTITY_FILE}" ]]; then
+    rm -f "${SSH_IDENTITY_FILE}"
+  fi
+}
+trap cleanup EXIT
+
+# Load HAERTH_SSH_PRIVATE_KEY into a temp identity file for CI / non-interactive use.
+setup_ssh_identity() {
+  if [[ -z "${HAERTH_SSH_PRIVATE_KEY:-}" ]]; then
+    return 0
+  fi
+  SSH_IDENTITY_FILE="$(mktemp)"
+  # GitHub Secrets may be multiline PEM, or a single line with literal \n.
+  if [[ "$(printf '%s' "${HAERTH_SSH_PRIVATE_KEY}" | head -n 1)" == *"BEGIN"* ]]; then
+    printf '%s\n' "${HAERTH_SSH_PRIVATE_KEY}" >"${SSH_IDENTITY_FILE}"
+  else
+    printf '%s\n' "${HAERTH_SSH_PRIVATE_KEY}" | sed 's/\\n/\n/g' >"${SSH_IDENTITY_FILE}"
+  fi
+  chmod 600 "${SSH_IDENTITY_FILE}"
+  SSH_BASE_OPTS+=(-i "${SSH_IDENTITY_FILE}" -o IdentitiesOnly=yes)
+}
+
+ssh_cmd() {
+  ssh "${SSH_BASE_OPTS[@]}" "${REMOTE_HOST}" "$@"
+}
+
+rsync_ssh() {
+  # Build ssh command string for rsync -e
+  local e="ssh"
+  local opt
+  for opt in "${SSH_BASE_OPTS[@]}"; do
+    e+=" $(printf '%q' "${opt}")"
+  done
+  rsync -avzc -e "${e}" "$@"
+}
 
 sync_public() {
   bash "${PROJECT_DIR}/scripts/sync-public.sh"
 }
 
 can_ssh_cn() {
-  ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no \
-    "${REMOTE_HOST}" "true" >/dev/null 2>&1
+  # Prefer explicit key when provided; otherwise try agent/default keys.
+  if [[ -z "${HAERTH_SSH_PRIVATE_KEY:-}" && -z "${SSH_AUTH_SOCK:-}" && ! -f "${HOME}/.ssh/id_rsa" && ! -f "${HOME}/.ssh/id_ed25519" ]]; then
+    # No obvious SSH material — skip early in CI without the secret.
+    if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
+      return 1
+    fi
+  fi
+  ssh_cmd "true" >/dev/null 2>&1
 }
 
 wrangler_bin() {
@@ -47,13 +104,11 @@ wrangler_bin() {
 }
 
 can_wrangler_org() {
-  # Prefer an explicit token (required for non-interactive CI / cloud agents).
   if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
     return 0
   fi
   local bin out
   bin="$(wrangler_bin)" || return 1
-  # `wrangler whoami` often exits 0 even when logged out — check the text.
   out="$(cd "${PROJECT_DIR}" && ${bin} whoami 2>&1)" || true
   if grep -qiE 'not authenticated|not logged in|please run .*login|unable to authenticate' <<<"${out}"; then
     return 1
@@ -69,44 +124,37 @@ deploy_cn() {
 
   if ! can_ssh_cn; then
     warn "Skipping haerth.cn: SSH to ${REMOTE_HOST} failed (BatchMode)."
-    warn "Add your ECS SSH private key locally, then re-run: ./deploy.sh cn"
-    warn "  (or: ssh-add /path/to/key && ./deploy.sh)"
+    warn "Provide HAERTH_SSH_PRIVATE_KEY (and optional HAERTH_SSH_HOST / HAERTH_SSH_USER),"
+    warn "  or use a local ssh-agent key that can reach the host."
     return 2
   fi
 
   sync_public
 
   log "Ensuring remote directories exist"
-  ssh -o StrictHostKeyChecking=no "${REMOTE_HOST}" "\
-    mkdir -p '${REMOTE_DIR}' '${NGINX_BACKUP_DIR}'\
-  "
+  ssh_cmd "mkdir -p '${REMOTE_DIR}' '${NGINX_BACKUP_DIR}'"
 
   log "Syncing static site files from public/ -> ${REMOTE_DIR}"
-  rsync -avzc \
-    -e "ssh -o StrictHostKeyChecking=no" \
+  rsync_ssh \
     --delete \
     --exclude '.DS_Store' \
     "${PUBLIC_DIR}/" \
     "${REMOTE_HOST}:${REMOTE_DIR}/"
 
   log "Backing up current nginx config"
-  ssh -o StrictHostKeyChecking=no "${REMOTE_HOST}" "\
+  ssh_cmd "\
     if [ -f '${NGINX_SITE_PATH}' ]; then \
       cp '${NGINX_SITE_PATH}' '${NGINX_BACKUP_DIR}/haerth.'\"\$(date +%Y%m%d_%H%M%S)\"'.bak'; \
     fi\
   "
 
   log "Updating nginx site config"
-  rsync -avzc \
-    -e "ssh -o StrictHostKeyChecking=no" \
+  rsync_ssh \
     "${PROJECT_DIR}/nginx.haerth.conf" \
     "${REMOTE_HOST}:${NGINX_SITE_PATH}"
 
   log "Validating nginx and reloading"
-  ssh -o StrictHostKeyChecking=no "${REMOTE_HOST}" "\
-    nginx -t && \
-    systemctl reload nginx\
-  "
+  ssh_cmd "nginx -t && systemctl reload nginx"
 
   log "haerth.cn done → https://haerth.cn"
   return 0
@@ -117,8 +165,7 @@ deploy_org() {
 
   if ! can_wrangler_org; then
     warn "Skipping haerth.org: no Cloudflare credentials."
-    warn "Set CLOUDFLARE_API_TOKEN or run: npx wrangler login"
-    warn "Then re-run: ./deploy.sh org"
+    warn "Set CLOUDFLARE_API_TOKEN (optional CLOUDFLARE_ACCOUNT_ID) or run: npx wrangler login"
     return 2
   fi
 
@@ -126,7 +173,7 @@ deploy_org() {
 
   local bin
   bin="$(wrangler_bin)" || {
-    warn "wrangler not found. Run: npm install"
+    warn "wrangler not found. Run: npm install / npm ci"
     return 1
   }
 
@@ -156,6 +203,8 @@ main() {
       exit 1
       ;;
   esac
+
+  setup_ssh_identity
 
   local cn_rc=0 org_rc=0
 
@@ -194,11 +243,11 @@ main() {
     exit 1
   fi
   if [[ "${cn_rc}" -eq 2 && "${org_rc}" -eq 2 ]]; then
-    warn "Nothing deployed — need SSH for cn and/or CLOUDFLARE_API_TOKEN for org."
+    warn "Nothing deployed — need HAERTH_SSH_PRIVATE_KEY for cn and/or CLOUDFLARE_API_TOKEN for org."
     exit 1
   fi
   if [[ "${cn_rc}" -eq 2 || "${org_rc}" -eq 2 ]]; then
-    warn "Partial deploy. Install missing credentials and re-run ./deploy.sh"
+    warn "Partial deploy (one target skipped). Add the missing GitHub secret / local credential for full dual publish."
     exit 0
   fi
   exit 0
